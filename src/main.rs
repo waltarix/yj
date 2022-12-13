@@ -1,4 +1,4 @@
-use clap::{crate_description, crate_version, Parser};
+use clap::Parser;
 use exitfailure::ExitFailure;
 use snafu::{ResultExt, Snafu};
 use std::{
@@ -6,6 +6,11 @@ use std::{
     io::{stdin, stdout, Read, Write},
     path::PathBuf,
 };
+
+#[cfg(feature = "completions")]
+use clap::CommandFactory;
+#[cfg(feature = "completions")]
+use clap_complete::{generate, Shell};
 
 struct Input {
     handle: Box<dyn Read>,
@@ -52,7 +57,7 @@ enum Error {
 }
 
 #[derive(Clone, Debug, Parser)]
-#[clap(about=crate_description!(), version=crate_version!())]
+#[command(about, version)]
 struct MyArgs {
     /// Use compact formatting for the JSON output.
     #[clap(long, short)]
@@ -71,12 +76,20 @@ struct MyArgs {
     #[clap(long, short)]
     json: bool,
 
+    /// Do not perform merging of `<<` keys.
+    #[clap(long, short)]
+    no_merge: bool,
+
     /// Output file name for the JSON. Defaults to stdout.
     #[clap(long, short)]
     output: Option<PathBuf>,
 
     /// Input YAML file name. Defaults to stdin.
     input: Option<PathBuf>,
+
+    #[cfg(feature = "completions")]
+    #[clap(long, hide = true, exclusive = true)]
+    completion: Option<Shell>,
 }
 
 fn from_json(input: Input, mut output: Output, args: &MyArgs) -> Result<(), Error> {
@@ -102,8 +115,12 @@ fn from_json(input: Input, mut output: Output, args: &MyArgs) -> Result<(), Erro
 }
 
 fn from_yaml(input: Input, mut output: Output, args: &MyArgs) -> Result<(), Error> {
-    let data: serde_yaml::Value =
+    let mut data: serde_yaml::Value =
         serde_yaml::from_reader(input.handle).context(ReadYAMLSnafu { name: input.name })?;
+
+    if !args.no_merge {
+        data.apply_merge().unwrap();
+    };
 
     // Failure to format JSON output should never happen.
     if args.yaml {
@@ -131,12 +148,31 @@ fn dispatch(input: Input, output: Output, args: &MyArgs) -> Result<(), Error> {
     }
 }
 
+#[cfg(feature = "completions")]
+fn print_completion(shell: Shell) -> Result<(), ExitFailure> {
+    let mut buf = Vec::new();
+    let mut cmd = MyArgs::command();
+    let name = cmd.get_name().to_string();
+
+    generate(shell, &mut cmd, name, &mut buf);
+
+    let completion = std::str::from_utf8(buf.as_slice()).unwrap();
+    print!("{}", completion);
+
+    Ok(())
+}
+
 fn main() -> Result<(), ExitFailure> {
     let args = MyArgs::parse();
 
+    #[cfg(feature = "completions")]
+    if let Some(shell) = args.completion {
+        return print_completion(shell);
+    }
+
     let input: Input = match &args.input {
         Some(filename) => Input {
-            handle: Box::new(File::open(&filename).context(OpenInputSnafu { filename })?),
+            handle: Box::new(File::open(filename).context(OpenInputSnafu { filename })?),
             name: filename.display().to_string(),
         },
         None => Input {
@@ -147,7 +183,7 @@ fn main() -> Result<(), ExitFailure> {
 
     let output: Output = match &args.output {
         Some(filename) => Output {
-            handle: Box::new(File::create(&filename).context(OpenOutputSnafu { filename })?),
+            handle: Box::new(File::create(filename).context(OpenOutputSnafu { filename })?),
             name: filename.display().to_string(),
         },
         None => Output {

@@ -3,23 +3,30 @@ name = "yj"
 version = "1.2.2"
 authors = ["Bruce Adams <bruce.adams@acm.org>"]
 categories = ["command-line-utilities"]
-description = "Command line tool that converts YAML to JSON"
-edition = "2018"
+edition = "2021"
 homepage = "https://github.com/bruceadams/yj"
 keywords = ["cli", "json", "yaml"]
 license = "Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/bruceadams/yj"
+description = "Command line tool that converts YAML to JSON"
 
 [dependencies]
+clap = { version = "4", features = ["derive"] }
+clap_complete = { version = "4", optional = true }
 exitfailure = "0.5.1"
-serde_yaml = "0.8.24"
+serde_yaml = "0.9.14"
 snafu = "0.7.1"
 
 [dependencies.serde_json]
 features = ["arbitrary_precision", "preserve_order"]
 version = "1.0.82"
 
-[dependencies.clap]
-features = ["derive", "cargo", "wrap_help"]
-version = "3.2.8"
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+strip = true
+
+[features]
+completions = ["clap_complete"]
